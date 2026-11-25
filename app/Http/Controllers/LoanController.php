@@ -5,7 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Book;
 use App\Models\Loan;
 use App\Models\Member;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 
 class LoanController extends Controller
 {
@@ -14,6 +17,34 @@ class LoanController extends Controller
         $loans = Loan::with(['member', 'user', 'loanItems.book'])->paginate(10);
 
         return view('loans.index', compact('loans'));
+    }
+
+    /**
+     * Display the loan report sourced from the internal API.
+     */
+    public function report(Request $request): View
+    {
+        $body = ['data' => [], 'meta' => null];
+
+        try {
+            $baseUrl = rtrim((string) config('services.internal_api.base_url'), '/');
+            $response = Http::connectTimeout(3)
+                ->timeout(5)
+                ->get($baseUrl.'/api/loans', [
+                    'page' => max(1, $request->integer('page', 1)),
+                ]);
+
+            if ($response->successful() && is_array($data = $response->json())) {
+                $body = $data;
+            }
+        } catch (ConnectionException $e) {
+            // Server internal API (port 8011) tidak bisa dihubungi - tabel laporan tampil kosong.
+        }
+
+        return view('loans.report', [
+            'loans' => $body['data'] ?? [],
+            'meta' => $body['meta'] ?? null,
+        ]);
     }
 
     public function create()
